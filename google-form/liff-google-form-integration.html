@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+  <html lang="zh-TW">
+  <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>購買表單 - LIFF</title>
+      <script src="https://liff.line.me/sdk/web/liff.js"></script>
+      <style>
+          * {
+              margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+}
+        body {
+                      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+}
+        .container {
+                      background: white;
+            border-radius: 12px;
+            padding: 40px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+}
+        .spinner {
+                      width: 50px;
+            height: 50px;
+            margin: 0 auto 20px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+}
+        @keyframes spin {
+                      0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+}
+        h1 {
+                      font-size: 20px;
+            color: #333;
+            margin-bottom: 10px;
+}
+        p {
+                      color: #666;
+            font-size: 14px;
+            line-height: 1.6;
+}
+        .status {
+                      margin-top: 20px;
+            padding: 12px;
+            background: #f5f5f5;
+                        border-radius: 6px;
+            font-size: 12px;
+            color: #999;
+}
+        .error {
+                      background: #ffebee;
+                      border: 1px solid #ef5350;
+            border-radius: 6px;
+            padding: 15px;
+            margin-top: 20px;
+            color: #d32f2f;
+            }
+    </style>
+      </head>
+      <body>
+          <div class="container">
+              <div class="spinner"></div>
+              <h1>📝 正在準備表單...</h1>
+              <p>自動帶入您的 Line 資訊</p>
+              <div class="status" id="status">初始化中...</div>
+                      <div id="message"></div>
+                  </div>
+
+                  <script>
+                      'use strict';
+
+        const CONFIG = {
+                      LIFF_ID: "2010020132-3XuX3I6b",
+                                    GOOGLE_FORM_ID: "1FAIpQLSdwu3zElEvcn8BNsusREThOU3szOJj7ZEaDc4dSpr-xolauDw",
+                                    FORM_FIELDS: {
+                name: "entry.1661382921",
+                                  gender: "entry.1834608958",
+                                  ageGroup: "entry.318104399",
+                                  email: "entry.703604523",
+                                  phone: "entry.694565724",
+                                  city: "entry.1506267035",
+                                  isSeller: "entry.2112857716",
+                                  note: "entry.2093061763"
+                  }
+        };
+
+        async function initLIFF() {
+            try {
+                updateStatus("初始化 LIFF...");
+                await liff.init({ liffId: CONFIG.LIFF_ID });
+                updateStatus("LIFF 已初始化");
+
+                if (!liff.isLoggedIn()) {
+                    updateStatus("轉向 Line 登入...");
+                    liff.login();
+                    return;
+                }
+
+                await proceedToForm();
+            } catch (error) {
+                showError("初始化失敗", error.message);
+            }
+        }
+
+        async function proceedToForm() {
+            try {
+                updateStatus("取得使用者資訊...");
+                const profile = await liff.getProfile();
+                const displayName = profile.displayName;
+
+                updateStatus("準備導向表單...");
+                const formURL = buildGoogleFormURL(displayName);
+
+                setTimeout(() => {
+                                      window.location.href = formURL;
+            }, 1500);
+            } catch (error) {
+                showError("無法取得資訊", error.message);
+            }
+        }
+
+        function buildGoogleFormURL(displayName) {
+                      const baseURL = `https://docs.google.com/forms/d/e/${CONFIG.GOOGLE_FORM_ID}/viewform`;
+            const params = new URLSearchParams();
+            params.append('usp', 'pp_url');
+            if (CONFIG.FORM_FIELDS.name) {
+                params.append(CONFIG.FORM_FIELDS.name, displayName);
+            }
+            return baseURL + "?" + params.toString();
+        }
+
+        function updateStatus(message) {
+                      const statusEl = document.getElementById('status');
+            if (statusEl) statusEl.textContent = message;
+        }
+
+        function showError(title, message) {
+                      const msgEl = document.getElementById('message');
+            msgEl.innerHTML = `<div class="error"><strong>${title}</strong><br>${message}</div>`;
+            document.querySelector('.spinner').style.display = 'none';
+        }
+
+        window.addEventListener('load', () => {
+                      initLIFF();
+});
+
+    </script>
+      </body>
+      </html>
