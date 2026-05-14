@@ -4,13 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>購買表單 - LIFF</title>
-    <script src="https://liff.line.me/sdk/web/liff.js"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -38,36 +33,11 @@
             border-radius: 50%;
             animation: spin 1s linear infinite;
         }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        h1 {
-            font-size: 20px;
-            color: #333;
-            margin-bottom: 10px;
-        }
-        p {
-            color: #666;
-            font-size: 14px;
-            line-height: 1.6;
-        }
-        .status {
-            margin-top: 20px;
-            padding: 12px;
-            background: #f5f5f5;
-            border-radius: 6px;
-            font-size: 12px;
-            color: #999;
-        }
-        .error {
-            background: #ffebee;
-            border: 1px solid #ef5350;
-            border-radius: 6px;
-            padding: 15px;
-            margin-top: 20px;
-            color: #d32f2f;
-        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        h1 { font-size: 20px; color: #333; margin-bottom: 10px; }
+        p { color: #666; font-size: 14px; line-height: 1.6; }
+        .status { margin-top: 20px; padding: 12px; background: #f5f5f5; border-radius: 6px; font-size: 12px; color: #999; }
+        .error { background: #ffebee; border: 1px solid #ef5350; border-radius: 6px; padding: 15px; margin-top: 20px; color: #d32f2f; font-size: 13px; }
     </style>
 </head>
 <body>
@@ -80,108 +50,90 @@
     </div>
 
     <script>
-        'use strict';
-
         const CONFIG = {
             LIFF_ID: "2010020132-3XuX3I6b",
             GOOGLE_FORM_ID: "1FAIpQLSdwu3zElEvcn8BNsusREThOU3szOJj7ZEaDc4dSpr-xolauDw",
-            
-            // 掃描出來的 Entry ID
-            // 根據你的 Google Sheet 欄位順序對應：
-            // 姓名, 性別, 年齡區間, Email, 聯絡電話, 地區, 是否賣家, 備註
             FORM_FIELDS: {
-                name: "entry.1661382921",          // 姓名
-                gender: "entry.1834608958",        // 性別
-                ageGroup: "entry.318104399",       // 年齡區間
-                email: "entry.703604523",          // Email
-                phone: "entry.694565724",          // 聯絡電話
-                city: "entry.1506267035",          // 所在地區
-                isSeller: "entry.2112857716",      // 是否賣家
-                note: "entry.2093061763"           // 備註
+                name: "entry.1661382921",
+                gender: "entry.1834608958",
+                ageGroup: "entry.318104399",
+                email: "entry.703604523",
+                phone: "entry.694565724",
+                city: "entry.1506267035",
+                isSeller: "entry.2112857716",
+                note: "entry.2093061763"
             }
         };
 
-        console.log('[LIFF-Google Form] 初始化中...');
+        function updateStatus(msg) {
+            const el = document.getElementById('status');
+            if (el) el.textContent = msg;
+            console.log(msg);
+        }
 
-        async function initLIFF() {
+        function showError(err) {
+            document.querySelector('.spinner').style.display = 'none';
+            const msg = document.getElementById('message');
+            msg.innerHTML = `<div class="error"><strong>錯誤：${err}</strong><br>請確保從 Line App 內點擊連結。</div>`;
+        }
+
+        // 等待 LIFF SDK 加載
+        function waitForLIFF(retries = 30) {
+            return new Promise((resolve, reject) => {
+                let count = 0;
+                const check = () => {
+                    if (typeof window.liff !== 'undefined') {
+                        resolve();
+                    } else if (count < retries) {
+                        count++;
+                        setTimeout(check, 200);
+                    } else {
+                        reject(new Error('LIFF SDK 無法加載'));
+                    }
+                };
+                check();
+            });
+        }
+
+        async function init() {
             try {
+                updateStatus("等待 LIFF SDK...");
+                // 先加載 SDK
+                await new Promise((resolve, reject) => {
+                    const script = document.createElement('script');
+                    script.src = 'https://liff.line.me/sdk/web/liff.js';
+                    script.onload = resolve;
+                    script.onerror = reject;
+                    document.body.appendChild(script);
+                });
+
+                updateStatus("等待初始化...");
+                await waitForLIFF();
+
                 updateStatus("初始化 LIFF...");
-                
                 await liff.init({ liffId: CONFIG.LIFF_ID });
-                console.log('[LIFF] 初始化成功');
-                updateStatus("LIFF 已初始化");
-                
+
                 if (!liff.isLoggedIn()) {
-                    console.log('[LIFF] 轉向登入...');
-                    updateStatus("轉向 Line 登入...");
                     liff.login();
                     return;
                 }
-                
-                await proceedToForm();
-            } catch (error) {
-                console.error('[LIFF] 錯誤:', error);
-                showError("初始化失敗", error.message);
-            }
-        }
 
-        async function proceedToForm() {
-            try {
                 updateStatus("取得使用者資訊...");
-                
                 const profile = await liff.getProfile();
-                const lineId = profile.userId;
-                const displayName = profile.displayName;
-                
-                console.log('[LIFF] 使用者:', { userId: lineId, displayName });
                 
                 updateStatus("準備導向表單...");
-                
-                const formURL = buildGoogleFormURL(displayName);
-                console.log('[LIFF] 表單 URL:', formURL);
-                
-                setTimeout(() => {
-                    console.log('[LIFF] 正在導向到 Google Form...');
-                    window.location.href = formURL;
-                }, 1500);
-                
-            } catch (error) {
-                console.error('[LIFF] 錯誤:', error);
-                showError("無法取得資訊", error.message);
+                const url = new URL(`https://docs.google.com/forms/d/e/${CONFIG.GOOGLE_FORM_ID}/viewform`);
+                url.searchParams.append('usp', 'pp_url');
+                url.searchParams.append(CONFIG.FORM_FIELDS.name, profile.displayName);
+
+                setTimeout(() => { window.location.href = url.toString(); }, 1500);
+            } catch (err) {
+                console.error(err);
+                showError(err.message);
             }
         }
 
-        function buildGoogleFormURL(displayName) {
-            const baseURL = `https://docs.google.com/forms/d/e/${CONFIG.GOOGLE_FORM_ID}/viewform`;
-            const params = new URLSearchParams();
-            
-            params.append('usp', 'pp_url');
-            
-            // 預填姓名
-            if (CONFIG.FORM_FIELDS.name) {
-                params.append(CONFIG.FORM_FIELDS.name, displayName);
-            }
-            
-            return baseURL + "?" + params.toString();
-        }
-
-        function updateStatus(message) {
-            const statusEl = document.getElementById('status');
-            if (statusEl) statusEl.textContent = message;
-            console.log('[狀態]', message);
-        }
-
-        function showError(title, message) {
-            const msgEl = document.getElementById('message');
-            msgEl.innerHTML = `<div class="error"><strong>${title}</strong><br>${message}</div>`;
-            document.querySelector('.spinner').style.display = 'none';
-        }
-
-        window.addEventListener('load', () => {
-            console.log('[系統] 頁面加載完成');
-            initLIFF();
-        });
-
+        window.addEventListener('load', init);
     </script>
 </body>
 </html>
