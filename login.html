@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LINE 登入 - 購買表單</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 12px;
+            padding: 40px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+        }
+        .spinner {
+            width: 50px; height: 50px;
+            margin: 0 auto 20px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        h1 { font-size: 20px; color: #333; margin-bottom: 10px; }
+        p { color: #666; font-size: 14px; line-height: 1.6; }
+        .status { margin-top: 20px; padding: 12px; background: #f5f5f5; border-radius: 6px; font-size: 12px; color: #999; }
+        .line-btn {
+            display: inline-flex; align-items: center; gap: 10px;
+            background: #00B900; color: white;
+            border: none; border-radius: 8px;
+            padding: 14px 28px; font-size: 16px; font-weight: bold;
+            cursor: pointer; margin-top: 20px;
+            transition: background 0.2s;
+        }
+        .line-btn:hover { background: #00A000; }
+        .line-logo { width: 22px; height: 22px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="spinner" id="spinner"></div>
+        <h1 id="title">LINE 登入</h1>
+        <p id="desc">點擊下方按鈕登入 LINE 以繼續填寫表單</p>
+        <button class="line-btn" id="loginBtn" onclick="startLogin()">
+            <svg class="line-logo" viewBox="0 0 24 24" fill="white">
+                <path d="M12 2C6.48 2 2 6.03 2 11c0 2.76 1.34 5.26 3.47 6.87L2 22l4.35-1.73C7.56 21.08 9.65 22 12 22c5.52 0 10-4.03 10-9S17.52 2 12 2z"/>
+            </svg>
+            用 LINE 登入
+        </button>
+        <div class="status" id="status">等待點擊...</div>
+    </div>
+
+    <script>
+    'use strict';
+
+    const CONFIG = {
+        LINE_CHANNEL_ID: '2010202587',
+        CALLBACK_URL: encodeURIComponent('https://ubiquitous-tiramisu-9b96d7.netlify.app/callback.html'),
+        LINE_AUTH_URL: 'https://access.line.me/oauth2/v2.1/authorize',
+        SCOPE: 'profile%20openid'
+    };
+
+    function base64urlEncode(buffer) {
+        const bytes = new Uint8Array(buffer);
+        let str = '';
+        for (const b of bytes) str += String.fromCharCode(b);
+        return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+    }
+
+    async function generateCodeVerifier() {
+        const array = new Uint8Array(32);
+        crypto.getRandomValues(array);
+        return base64urlEncode(array);
+    }
+
+    async function generateCodeChallenge(verifier) {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(verifier);
+        const digest = await crypto.subtle.digest('SHA-256', data);
+        return base64urlEncode(digest);
+    }
+
+    function generateState() {
+        const array = new Uint8Array(16);
+        crypto.getRandomValues(array);
+        return base64urlEncode(array);
+    }
+
+    async function startLogin() {
+        try {
+            document.getElementById('status').textContent = '準備登入...';
+            document.getElementById('loginBtn').disabled = true;
+
+            const verifier = await generateCodeVerifier();
+            const challenge = await generateCodeChallenge(verifier);
+            const state = generateState();
+
+            sessionStorage.setItem('pkce_verifier', verifier);
+            sessionStorage.setItem('oauth_state', state);
+
+            const authParams = new URLSearchParams({
+                response_type: 'code',
+                client_id: CONFIG.LINE_CHANNEL_ID,
+                redirect_uri: decodeURIComponent(CONFIG.CALLBACK_URL),
+                scope: CONFIG.SCOPE,
+                state: state,
+                code_challenge: challenge,
+                code_challenge_method: 'S256'
+            });
+
+            document.getElementById('status').textContent = '跳轉到 LINE...';
+            window.location.href = CONFIG.LINE_AUTH_URL + '?' + authParams.toString();
+        } catch (err) {
+            console.error('[登入] 錯誤:', err);
+            document.getElementById('status').textContent = '登入失敗: ' + err.message;
+        }
+    }
+    </script>
+</body>
+</html>

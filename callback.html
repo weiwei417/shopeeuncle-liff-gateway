@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LINE 登入中</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 12px;
+            padding: 40px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+        }
+        .spinner {
+            width: 50px; height: 50px;
+            margin: 0 auto 20px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        h1 { font-size: 20px; color: #333; margin-bottom: 10px; }
+        p { color: #666; font-size: 14px; line-height: 1.6; }
+        .status {
+            margin-top: 20px; padding: 12px;
+            background: #f5f5f5; border-radius: 6px;
+            font-size: 12px; color: #999;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="spinner" id="spinner"></div>
+        <h1 id="title">LINE 登入中...</h1>
+        <p id="desc">請稍候，正在處理LINE授權...</p>
+        <div class="status" id="status">連接 LINE伺服器...</div>
+    </div>
+
+    <script>
+    'use strict';
+
+    const CONFIG = {
+        LINE_CHANNEL_ID: '2010202587',
+        CALLBACK_URL: 'https://ubiquitous-tiramisu-9b96d7.netlify.app/callback.html',
+        N8N_WEBHOOK: 'https://hwhn8n.zeabur.app/webhook/6a8cf721-d5e7-4545-938f-51ef6bc9cbdb',
+        LINE_TOKEN_URL: 'https://api.line.me/oauth2/v2.1/token',
+        LINE_PROFILE_URL: 'https://api.line.me/v2/profile',
+        GOOGLE_FORM_URL: 'https://docs.google.com/forms/d/e/1FAIpQLSdwu3zElEvcn8BNsusREThOU3szOJj7ZEaDc4dSpr-xolauDw/viewform',
+        FORM_FIELDS: {
+            name: 'entry.1661382921',
+            note: 'entry.2093061763'
+        }
+    };
+
+    function base64urlEncode(buffer) {
+        const bytes = new Uint8Array(buffer);
+        let str = '';
+        for (const b of bytes) str += String.fromCharCode(b);
+        return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+    }
+
+    function getUrlParam(name) {
+        const params = new URLSearchParams(window.location.search);
+        return params.get(name);
+    }
+
+    function updateStatus(msg) {
+        document.getElementById('status').textContent = msg;
+        console.log('[狀態]', msg);
+    }
+
+    function showError(title, msg) {
+        document.getElementById('spinner').style.display = 'none';
+        document.querySelector('.container').innerHTML =
+            '<h2 style="color:#d32f2f;">' + title + '</h2>' +
+            '<p style="color:#666;margin-top:12px;">' + msg + '</p>';
+    }
+
+    async function sendToN8n(userId, displayName) {
+        updateStatus('傳送資料到後台...');
+        try {
+            const resp = await fetch(CONFIG.N8N_WEBHOOK, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId, displayName })
+            });
+            console.log('[n8n] 響應:', resp.status);
+            return resp.ok;
+        } catch (err) {
+            console.error('[n8n] 錯誤:', err);
+            return false;
+        }
+    }
+
+    function redirectToGoogleForm(displayName, userId) {
+        const baseUrl = CONFIG.GOOGLE_FORM_URL;
+        const params = new URLSearchParams();
+        params.append(CONFIG.FORM_FIELDS.name, displayName);
+        params.append(CONFIG.FORM_FIELDS.note, 'LINE ID: ' + userId);
+        const finalUrl = baseUrl + '?' + params.toString();
+        console.log('[跳轉]', finalUrl);
+        window.location.href = finalUrl;
+    }
+
+    async function handleCallback() {
+        const code = getUrlParam('code');
+        const state = getUrlParam('state');
+        const error = getUrlParam('error');
+
+        if (error) {
+            showError('授權失敗', error);
+            return;
+        }
+
+        if (!code) {
+            showError('缺少授權碼', 'URL中沒有 code 參數');
+            return;
+        }
+
+        updateStatus('驗證狀態...');
+        const savedState = sessionStorage.getItem('oauth_state');
+        if (state && savedState && state !== savedState) {
+            showError('狀態驗證失敗', '可能是 CSRF 攻擊，請重新登入');
+            return;
+        }
+
+        updateStatus('兌換 access token...');
+        const verifier = sessionStorage.getItem('pkce_verifier');
+
+        let accessToken;
+        try {
+            const tokenResp = await fetch(CONFIG.LINE_TOKEN_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                    grant_type: 'authorization_code',
+                    client_id: CONFIG.LINE_CHANNEL_ID,
+                    code: code,
+                    redirect_uri: CONFIG.CALLBACK_URL,
+                    code_verifier: verifier
+                })
+            });
+
+            if (!tokenResp.ok) {
+                const errText = await tokenResp.text();
+                throw new Error('Token exchange failed: ' + errText);
+            }
+
+            const tokenData = await tokenResp.json();
+            accessToken = tokenData.access_token;
+            console.log('[Token] 取得成功');
+        } catch (err) {
+            showError('Token 兌換失敗', err.message);
+            return;
+        }
+
+        updateStatus('取得 LINE 個人資料...');
+        try {
+            const profileResp = await fetch(CONFIG.LINE_PROFILE_URL, {
+                headers: { 'Authorization': 'Bearer ' + accessToken }
+            });
+
+            if (!profileResp.ok) {
+                throw new Error('Profile API failed: ' + profileResp.status);
+            }
+
+            const profile = await profileResp.json();
+            const userId = profile.userId;
+            const displayName = profile.displayName;
+            console.log('[Profile]', userId, displayName);
+
+            await sendToN8n(userId, displayName);
+            redirectToGoogleForm(displayName, userId);
+
+        } catch (err) {
+            showError('取得資料失敗', err.message);
+        }
+    }
+
+    sessionStorage.removeItem('pkce_verifier');
+    sessionStorage.removeItem('oauth_state');
+
+    handleCallback();
+    </script>
+</body>
+</html>
